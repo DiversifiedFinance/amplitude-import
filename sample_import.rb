@@ -4,6 +4,10 @@ require 'logger'
 require 'json'
 require 'work_queue'
 require 'retries'
+require 'uri'
+require 'time'
+require 'net/http'
+require 'net/https'
 
 unless ENV['API_KEY']
   abort 'Must set API_KEY'
@@ -11,36 +15,34 @@ end
 
 class AmplitudeImporter
   API_KEY = ENV['API_KEY'].freeze
-  ENDPOINT = 'https://api.amplitude.com/httpapi'.freeze
+  ENDPOINT = 'https://api.eu.amplitude.com/batch'.freeze
 
   def run(filename)
     submitted_count = 0
     logger.info "Processing #{filename}"
     uri = URI.parse(ENDPOINT)
     File.open(filename) do |f|
-      f.each_line.lazy.each_slice(10) do |lines|
+      f.each_line.lazy.each_slice(1000) do |lines|
         json_lines = lines.compact.map do |line|
           JSON.parse(line.strip).tap do |json|
-            json['time'] = Time.parse(json['event_time']).to_f
-            json['carrier'] = json['device_carrier']
-            json['insert_id'] = [
-              json['user_id'],
-              json['event_id']
-            ].map(&:to_s).join('-')
+            json['time'] = (Time.parse(json['event_time']).to_f * 1000).to_i
           end
         end
 
         queue.enqueue_b do
           with_retries(max_tries: 10) do
-            response = Net::HTTP.post_form(
+            body = { api_key: API_KEY,
+                events: json_lines }.to_json
+            response = Net::HTTP.post(
               uri,
-              { api_key: API_KEY,
-                event: JSON.generate(json_lines) })
+              body,
+              { 'Content-Type': 'application/json', 'Accept': '*/*' })
             if response.code == '200'
               logger.info "Response completed successfully"
             else
               msg = "Response failed with #{response.code}: #{response.message}"
               logger.info msg
+              logger.info response.body
               raise msg
             end
           end

@@ -5,11 +5,11 @@ GEM
     work_queue (2.5.4)
 
 PLATFORMS
-  ruby
+  x86_64-darwin-22
 
 DEPENDENCIES
   retries
   work_queue
 
 BUNDLED WITH
-   1.13.6
+   2.4.10
